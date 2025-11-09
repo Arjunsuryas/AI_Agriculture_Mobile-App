@@ -1,0 +1,265 @@
+/*
+  # Agriculture App Database Schema
+
+  ## Overview
+  This migration creates the complete database structure for an agriculture mobile app with AI capabilities.
+
+  ## Tables Created
+  
+  ### 1. profiles
+  - `id` (uuid, primary key) - Links to auth.users
+  - `email` (text) - User email
+  - `full_name` (text) - User's full name
+  - `phone` (text) - Contact number
+  - `farm_name` (text) - Name of user's farm
+  - `location` (text) - Farm location
+  - `created_at` (timestamptz) - Account creation time
+  - `updated_at` (timestamptz) - Last update time
+
+  ### 2. fields
+  - `id` (uuid, primary key) - Unique field identifier
+  - `user_id` (uuid) - Owner of the field
+  - `name` (text) - Field name
+  - `area_hectares` (decimal) - Size in hectares
+  - `soil_type` (text) - Type of soil
+  - `current_crop` (text) - Currently planted crop
+  - `planting_date` (date) - When crop was planted
+  - `location` (text) - Field location/coordinates
+  - `notes` (text) - Additional notes
+  - `created_at` (timestamptz) - Record creation time
+  - `updated_at` (timestamptz) - Last update time
+
+  ### 3. crop_records
+  - `id` (uuid, primary key) - Unique record identifier
+  - `field_id` (uuid) - Associated field
+  - `crop_name` (text) - Name of crop
+  - `variety` (text) - Crop variety
+  - `planting_date` (date) - Planting date
+  - `expected_harvest_date` (date) - Expected harvest
+  - `actual_harvest_date` (date) - Actual harvest date
+  - `yield_amount` (decimal) - Harvest yield
+  - `yield_unit` (text) - Unit of measurement
+  - `status` (text) - Current status
+  - `created_at` (timestamptz) - Record creation time
+  - `updated_at` (timestamptz) - Last update time
+
+  ### 4. ai_analyses
+  - `id` (uuid, primary key) - Unique analysis identifier
+  - `user_id` (uuid) - User who requested analysis
+  - `field_id` (uuid) - Associated field (optional)
+  - `analysis_type` (text) - Type of AI analysis
+  - `image_url` (text) - URL to analyzed image
+  - `results` (jsonb) - AI analysis results
+  - `confidence_score` (decimal) - Confidence level (0-1)
+  - `recommendations` (text) - AI recommendations
+  - `created_at` (timestamptz) - Analysis time
+
+  ### 5. weather_data
+  - `id` (uuid, primary key) - Unique record identifier
+  - `location` (text) - Location for weather data
+  - `temperature` (decimal) - Temperature in Celsius
+  - `humidity` (decimal) - Humidity percentage
+  - `rainfall` (decimal) - Rainfall in mm
+  - `wind_speed` (decimal) - Wind speed
+  - `forecast_date` (date) - Date of forecast
+  - `data` (jsonb) - Complete weather data
+  - `created_at` (timestamptz) - Record creation time
+
+  ## Security
+  - Row Level Security (RLS) enabled on all tables
+  - Users can only access their own data
+  - Authenticated users required for all operations
+*/
+
+-- Create profiles table
+CREATE TABLE IF NOT EXISTS profiles (
+  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email text NOT NULL,
+  full_name text DEFAULT '',
+  phone text DEFAULT '',
+  farm_name text DEFAULT '',
+  location text DEFAULT '',
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own profile"
+  ON profiles FOR SELECT
+  TO authenticated
+  USING (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile"
+  ON profiles FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+CREATE POLICY "Users can insert own profile"
+  ON profiles FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = id);
+
+-- Create fields table
+CREATE TABLE IF NOT EXISTS fields (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  area_hectares decimal DEFAULT 0,
+  soil_type text DEFAULT '',
+  current_crop text DEFAULT '',
+  planting_date date,
+  location text DEFAULT '',
+  notes text DEFAULT '',
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE fields ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own fields"
+  ON fields FOR SELECT
+  TO authenticated
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create own fields"
+  ON fields FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own fields"
+  ON fields FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own fields"
+  ON fields FOR DELETE
+  TO authenticated
+  USING (auth.uid() = user_id);
+
+-- Create crop_records table
+CREATE TABLE IF NOT EXISTS crop_records (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  field_id uuid NOT NULL REFERENCES fields(id) ON DELETE CASCADE,
+  crop_name text NOT NULL,
+  variety text DEFAULT '',
+  planting_date date NOT NULL,
+  expected_harvest_date date,
+  actual_harvest_date date,
+  yield_amount decimal DEFAULT 0,
+  yield_unit text DEFAULT 'kg',
+  status text DEFAULT 'growing',
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE crop_records ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own crop records"
+  ON crop_records FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM fields
+      WHERE fields.id = crop_records.field_id
+      AND fields.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can create crop records for own fields"
+  ON crop_records FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM fields
+      WHERE fields.id = crop_records.field_id
+      AND fields.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can update own crop records"
+  ON crop_records FOR UPDATE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM fields
+      WHERE fields.id = crop_records.field_id
+      AND fields.user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM fields
+      WHERE fields.id = crop_records.field_id
+      AND fields.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can delete own crop records"
+  ON crop_records FOR DELETE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM fields
+      WHERE fields.id = crop_records.field_id
+      AND fields.user_id = auth.uid()
+    )
+  );
+
+-- Create ai_analyses table
+CREATE TABLE IF NOT EXISTS ai_analyses (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  field_id uuid REFERENCES fields(id) ON DELETE SET NULL,
+  analysis_type text NOT NULL,
+  image_url text DEFAULT '',
+  results jsonb DEFAULT '{}',
+  confidence_score decimal DEFAULT 0,
+  recommendations text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE ai_analyses ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own ai analyses"
+  ON ai_analyses FOR SELECT
+  TO authenticated
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create own ai analyses"
+  ON ai_analyses FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own ai analyses"
+  ON ai_analyses FOR DELETE
+  TO authenticated
+  USING (auth.uid() = user_id);
+
+-- Create weather_data table
+CREATE TABLE IF NOT EXISTS weather_data (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  location text NOT NULL,
+  temperature decimal DEFAULT 0,
+  humidity decimal DEFAULT 0,
+  rainfall decimal DEFAULT 0,
+  wind_speed decimal DEFAULT 0,
+  forecast_date date NOT NULL,
+  data jsonb DEFAULT '{}',
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE weather_data ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated users can view weather data"
+  ON weather_data FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- Create indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_fields_user_id ON fields(user_id);
+CREATE INDEX IF NOT EXISTS idx_crop_records_field_id ON crop_records(field_id);
+CREATE INDEX IF NOT EXISTS idx_ai_analyses_user_id ON ai_analyses(user_id);
+CREATE INDEX IF NOT EXISTS idx_weather_data_location ON weather_data(location, forecast_date);
